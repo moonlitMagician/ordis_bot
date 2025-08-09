@@ -6,6 +6,10 @@ import asyncio
 
 VOICE_CHANNEL_ID = 1257806077085352111  # Replace with your VC ID
 AUDIO_FOLDER = "./audio"  # Path to folder with MP3s
+FFMPEG_PATH = r"C:\Users\User\Desktop\ffmpeg-2025-08-07-git-fa458c7243-full_build\bin\ffmpeg.exe"  # Full path to ffmpeg.exe
+
+MIN_WAIT = 150  # Minimum wait time before playing next audio
+MAX_WAIT = 180  # Maximum wait time before playing next audio
 
 class OrdisVoice(commands.Cog):
     def __init__(self, bot):
@@ -20,25 +24,37 @@ class OrdisVoice(commands.Cog):
 
     async def join_vc(self):
         channel = self.bot.get_channel(VOICE_CHANNEL_ID)
-        if channel and isinstance(channel, discord.VoiceChannel):
-            if self.bot.voice_clients:
-                await self.bot.voice_clients[0].move_to(channel)
-            else:
-                await channel.connect()
+        if not channel or not isinstance(channel, discord.VoiceChannel):
+            print("Voice channel not found or invalid.")
+            return None
 
-    @tasks.loop(seconds=60)  # check every 60s
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=channel.guild)
+        if voice_client:
+            if voice_client.channel.id != channel.id:
+                await voice_client.move_to(channel)
+        else:
+            voice_client = await channel.connect()
+        return voice_client
+
+    @tasks.loop(seconds=1)
     async def play_random_lines(self):
-        """Plays a random MP3 at random intervals while bot is in VC."""
-        await self.join_vc()  # Ensure we stay in VC
-
-        if not self.bot.voice_clients:
+        vc = await self.join_vc()
+        if not vc:
+            print("Failed to join voice channel")
             return
 
-        vc = self.bot.voice_clients[0]
-        if vc.is_playing():
-            return  # wait until current audio is done
+        # Wait until voice client is actually connected (add a timeout)
+        for _ in range(10):  # wait up to 10 * 0.5 = 5 seconds
+            if vc.is_connected():
+                break
+            await asyncio.sleep(0.5)
+        else:
+            print("Voice client did not connect in time.")
+            return
 
-        # Pick random file from folder
+        if vc.is_playing():
+            return  # Wait until current audio is done
+
         files = [f for f in os.listdir(AUDIO_FOLDER) if f.endswith(".mp3")]
         if not files:
             print("⚠ No MP3 files found in folder.")
@@ -47,12 +63,13 @@ class OrdisVoice(commands.Cog):
         chosen_file = random.choice(files)
         file_path = os.path.join(AUDIO_FOLDER, chosen_file)
 
-        # Play the file
-        vc.play(discord.FFmpegPCMAudio(file_path))
+        print(f"Playing file: {file_path}")
+        vc.play(discord.FFmpegPCMAudio(file_path, executable=FFMPEG_PATH))
         print(f"🎵 Ordis says: {chosen_file}")
 
-        # Wait a random time between lines (e.g. 30–90 seconds)
-        await asyncio.sleep(random.randint(30, 90))
+        wait_time = random.randint(MIN_WAIT, MAX_WAIT)
+        print(f"Waiting {wait_time} seconds before next audio...")
+        await asyncio.sleep(wait_time)
 
     @play_random_lines.before_loop
     async def before_play_random_lines(self):
