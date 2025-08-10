@@ -21,17 +21,18 @@ class Ordis(commands.Bot):
 
 
 bot = Ordis(command_prefix='!', intents=intents)
+bot.remove_command('help')  # Remove default help command
 
 @bot.event
 async def on_ready():
     logging.info(f'{bot.user.name} is ONLINE (ID: {bot.user.id})')
 
-    channel_id = 1258050256973729803
-    channel = bot.get_channel(channel_id)
-    if channel is not None:
-        await channel.send(f'@here\n**System check complete! All systems online, sanity… questionable. Ready for orders, Operator!**')
-    else:
-        logging.error(f'Channel with ID {channel_id} not found.')
+    # channel_id = 1346808740288135241
+    # channel = bot.get_channel(channel_id)
+    # if channel is not None:
+       # await channel.send(f'@here\n**System check complete! All systems online, sanity… questionable. Ready for orders, Operator!**')
+    # else:
+       # logging.error(f'Channel with ID {channel_id} not found.')
     
 @bot.event
 async def on_command_error(ctx, error):
@@ -42,4 +43,4 @@ async def on_command_error(ctx, error):
         await ctx.send("An error occurred while processing your command.")
 
 
-bot.run(TOKEN)
+#bot.run(your_token_here)

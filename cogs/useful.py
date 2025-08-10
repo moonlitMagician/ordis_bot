@@ -8,6 +8,20 @@ class Useful(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         
+    @commands.command(name='help')
+    async def help_command(self, ctx):
+        help_text = (
+            "**Ordis Help Menu**\n"
+            "Here are some commands you can use Operator!:\n"
+            "`!archon` - Get information about the current Archon Hunt.\n"
+            "`!voidTrader` - Check if Baro Ki'Teer is currently active.\n"
+            "`!status` - Get the current status of various Warframe cycles.\n"
+            "`!warframe <name>` - Get information about a specific Warframe.\n"
+            "`!stats <username>` - Get Warframe stats for a specific user.\n"
+            "`!profile <username>` - Get the Warframe profile for a specific user.\n"
+        )
+        await ctx.send(help_text)
+
     @commands.command(name='archon', aliases=['archonhunt'])
     async def archon_hunt(self,ctx):
         url = "https://api.warframestat.us/pc/archonHunt"
@@ -148,7 +162,79 @@ class Useful(commands.Cog):
 
         await ctx.send(content=chosenText, embed=embed)
 
-        
+    @commands.command(name='stats', aliases=['stat'])
+    async def stats(self, ctx, username: str):
+        url = f"https://api.warframestat.us/profile/{username}/stats"
+        try:
+            response = requests.get(url,timeout=5)
+            if response.status_code != 200:
+                await ctx.send(f"❌ Failed to fetch stats for `{username}`. Please check the username and try again.")
+                return
+            
+            data = response.json()
+
+            embed = discord.Embed(
+                title=f"Stats for {username}",
+                description="Here are your Warframe stats, Operator.",
+                color=discord.Color.green()
+            )
+
+            embed.add_field(name="Player level", value=data.get('playerLevel', 0), inline=True)
+            embed.add_field(name="Missions Completed", value=data.get('missionsCompleted', 0), inline=True)
+            embed.add_field(name="Enemies Defeated", value=data.get('enemiesDefeated', 0), inline=True)
+            embed.add_field(name="Melee Kills", value=data.get('meleeKills', 0), inline =True)
+            embed.add_field(name="Deaths", value=data.get('deaths', 0), inline=True)
+            embed.add_field(name="Time Played (Hours)", value=data.get('timePlayedSec', 0) // 3600, inline=True)
+
+            # Weapons
+            weapons = data.get('weapons', [])
+            if weapons:
+                weapon_text = "\n".join(
+                    [f"**{w.get('uniqueName', 'Unknown')}** - {w.get('kills', 0)} kills"
+                     for w in weapons[:3]]
+                )
+                embed.add_field(name="Top Weapons", value=weapon_text or "No weapons found", inline=False)
+            
+            enemies = data.get('enemies', [])
+            if enemies:
+                enemy_text = "\n".join(
+                    [f"**{e.get('uniqueName', 'Unknown')}** - {e.get('kills', 0)} kills"]
+                    for e in enemies[:3]
+                )
+                embed.add_field(name="Top Enemies", value=enemy_text or "No enemies found", inline=False)
+
+            await ctx.send(embed=embed)
+        except requests.RequestException as e:
+            await ctx.send("Error fetching stats. Please try again later.")
+            print(f"Request error: {e}")
+        except Exception as e:
+            await ctx.send("An unexpected error occurred while fetching stats.")
+            print(f"Unexpected error: {e}")
+
+    @commands.command(name="profile")
+    async def profile(self, ctx, username: str):
+        url = f"https://api.warframestat.us/profile/{username}"
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code !=200:
+                await ctx.send(f"❌ Failed to fetch profile for `{username}`. Please check the username and try again.")
+                return
+            
+            data = response.json()
+            embed = discord.Embed(
+                title=f"Profile for {username}",
+                description="Here is your Warframe profile, Operator.",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(name="Mastery Rank", value=data.get('masteryRank', 'Unknown'), inline=True)
+            embed.add_field(name="Display Name", value=data.get('displayName', 'Unknown'), inline=True)
+            embed.add_field(name="Alignment", value=data.get('alignment', 'Unknown'), inline=True)
+            embed.add_field(name="Death Mark", value=data.get('deathMarks', 'None'), inline=True)
+
+        except requests.RequestException as e:
+            await ctx.send("Error fetching profile. Please try again later.")
+            print(f"Request error: {e}")
 
 async def setup(bot):
     await bot.add_cog(Useful(bot))
