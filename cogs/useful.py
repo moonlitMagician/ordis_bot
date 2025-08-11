@@ -2,7 +2,10 @@ import discord
 from discord.ext import commands
 import requests
 import logging
+import urllib.parse
 import random
+
+
 
 class Useful(commands.Cog):
     def __init__(self, bot):
@@ -10,17 +13,19 @@ class Useful(commands.Cog):
         
     @commands.command(name='help')
     async def help_command(self, ctx):
-        help_text = (
-            "**Ordis Help Menu**\n"
-            "Here are some commands you can use Operator!:\n"
-            "`!archon` - Get information about the current Archon Hunt.\n"
-            "`!voidTrader` - Check if Baro Ki'Teer is currently active.\n"
-            "`!status` - Get the current status of various Warframe cycles.\n"
-            "`!warframe <name>` - Get information about a specific Warframe.\n"
-            "`!stats <username>` - Get Warframe stats for a specific user.\n"
-            "`!profile <username>` - Get the Warframe profile for a specific user.\n"
+        embed = discord.Embed(
+            title="Ordis Help Menu",
+            description="Here are some commands you can use, Operator!",
+            color=discord.Color.blue()
         )
-        await ctx.send(help_text)
+        embed.add_field(name="!archon", value="Get information about the current Archon Hunt.", inline=False)
+        embed.add_field(name="!voidTrader", value="Check if Baro Ki'Teer is currently active.", inline=False)
+        embed.add_field(name="!status", value="Get the current status of various Warframe cycles.", inline=False)
+        embed.add_field(name="!warframe <name>", value="Get information about a specific Warframe.", inline=False)
+        embed.add_field(name="!market <item name>", value="Get market orders for a specific item.", inline=False)
+        embed.set_footer(text="Ordis is pleased to assist you, Operator!")
+        
+        await ctx.send(embed=embed)
 
     @commands.command(name='archon', aliases=['archonhunt'])
     async def archon_hunt(self,ctx):
@@ -162,79 +167,64 @@ class Useful(commands.Cog):
 
         await ctx.send(content=chosenText, embed=embed)
 
-    @commands.command(name='stats', aliases=['stat'])
-    async def stats(self, ctx, username: str):
-        url = f"https://api.warframestat.us/profile/{username}/stats"
+    @commands.command(name='market')
+    async def market(self, ctx, *, item_name: str):
+        slug_item_name = item_name.strip().lower().replace(" ", "_")
+        url = f"https://api.warframe.market/v1/items/{slug_item_name}/orders?include=item"
+
         try:
-            response = requests.get(url,timeout=5)
+            response = requests.get(url, timeout=10)
             if response.status_code != 200:
-                await ctx.send(f"❌ Failed to fetch stats for `{username}`. Please check the username and try again.")
+                await ctx.send(f"❌ Could not find item `{item_name}` or API error.")
                 return
-            
+
             data = response.json()
+            orders = data.get("payload", {}).get("orders", [])
+            if not orders:
+                await ctx.send(f"No orders found for `{item_name}`.")
+                return
+
+            # Filter sell orders AND only sellers who are online and orders visible
+            sell_orders_online = [
+                o for o in orders
+                if o.get("order_type") == "sell" and o.get("visible", False) and o.get("user", {}).get("status") == "online"
+            ]
+            if not sell_orders_online:
+                await ctx.send(f"No active sell orders found for `{item_name}` from online sellers.")
+                return
+
+            # Sort by lowest platinum price
+            sell_orders_online.sort(key=lambda o: o.get("platinum", 999999))
 
             embed = discord.Embed(
-                title=f"Stats for {username}",
-                description="Here are your Warframe stats, Operator.",
-                color=discord.Color.green()
+                title=f"Sell Orders for {slug_item_name.replace('_', ' ').title()} (Online Sellers Only)",
+                color=discord.Color.blurple()
             )
 
-            embed.add_field(name="Player level", value=data.get('playerLevel', 0), inline=True)
-            embed.add_field(name="Missions Completed", value=data.get('missionsCompleted', 0), inline=True)
-            embed.add_field(name="Enemies Defeated", value=data.get('enemiesDefeated', 0), inline=True)
-            embed.add_field(name="Melee Kills", value=data.get('meleeKills', 0), inline =True)
-            embed.add_field(name="Deaths", value=data.get('deaths', 0), inline=True)
-            embed.add_field(name="Time Played (Hours)", value=data.get('timePlayedSec', 0) // 3600, inline=True)
+            for order in sell_orders_online[:5]:
+                user = order.get("user", {})
+                seller = user.get("ingame_name", "Unknown Seller")
+                price = order.get("platinum", 0)
+                quantity = order.get("quantity", 0)
+                last_seen = user.get("last_seen", "Unknown time")
+                platform = user.get("platform", "Unknown")
+                status = user.get("status", "offline").capitalize()
 
-            # Weapons
-            weapons = data.get('weapons', [])
-            if weapons:
-                weapon_text = "\n".join(
-                    [f"**{w.get('uniqueName', 'Unknown')}** - {w.get('kills', 0)} kills"
-                     for w in weapons[:3]]
+                embed.add_field(
+                    name=f"{seller} ({platform}, {status})",
+                    value=f"Price: {price} Platinum\nQuantity: {quantity}\nLast Seen: {last_seen}",
+                    inline=False
                 )
-                embed.add_field(name="Top Weapons", value=weapon_text or "No weapons found", inline=False)
-            
-            enemies = data.get('enemies', [])
-            if enemies:
-                enemy_text = "\n".join(
-                    [f"**{e.get('uniqueName', 'Unknown')}** - {e.get('kills', 0)} kills"]
-                    for e in enemies[:3]
-                )
-                embed.add_field(name="Top Enemies", value=enemy_text or "No enemies found", inline=False)
 
             await ctx.send(embed=embed)
+
         except requests.RequestException as e:
-            await ctx.send("Error fetching stats. Please try again later.")
-            print(f"Request error: {e}")
+            logging.error(f"Market API request failed: {e}")
+            await ctx.send("Error: Could not retrieve data from Warframe Market API.")
         except Exception as e:
-            await ctx.send("An unexpected error occurred while fetching stats.")
-            print(f"Unexpected error: {e}")
+            logging.error(f"Unexpected error: {e}")
+            await ctx.send("An unexpected error occurred while processing your request.")
 
-    @commands.command(name="profile")
-    async def profile(self, ctx, username: str):
-        url = f"https://api.warframestat.us/profile/{username}"
-        try:
-            response = requests.get(url, timeout=5)
-            if response.status_code !=200:
-                await ctx.send(f"❌ Failed to fetch profile for `{username}`. Please check the username and try again.")
-                return
-            
-            data = response.json()
-            embed = discord.Embed(
-                title=f"Profile for {username}",
-                description="Here is your Warframe profile, Operator.",
-                color=discord.Color.blue()
-            )
-
-            embed.add_field(name="Mastery Rank", value=data.get('masteryRank', 'Unknown'), inline=True)
-            embed.add_field(name="Display Name", value=data.get('displayName', 'Unknown'), inline=True)
-            embed.add_field(name="Alignment", value=data.get('alignment', 'Unknown'), inline=True)
-            embed.add_field(name="Death Mark", value=data.get('deathMarks', 'None'), inline=True)
-
-        except requests.RequestException as e:
-            await ctx.send("Error fetching profile. Please try again later.")
-            print(f"Request error: {e}")
 
 async def setup(bot):
     await bot.add_cog(Useful(bot))

@@ -43,4 +43,4 @@ async def on_command_error(ctx, error):
         await ctx.send("An error occurred while processing your command.")
 
 
-#bot.run(your_token_here)
+bot.run(TOKEN)
